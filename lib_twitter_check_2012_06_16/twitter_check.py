@@ -32,22 +32,19 @@ def get_username(account_line):
     return account[0]
 
 @tornado.gen.engine
-def check_account(account_line, username, callback=None):
+def check_account(acc_meta, callback=None):
     callback = tornado.stack_context.wrap(callback)
-    
-    url = 'https://mobile.twitter.com/{username}'.format(
-            username=tornado.escape.url_escape(username))
     
     wait_key = object()
     http_client = tornado.httpclient.AsyncHTTPClient()
-    http_client.fetch(url,
+    http_client.fetch(acc_meta['url'],
             follow_redirects=False,
             callback=(yield tornado.gen.Callback(wait_key)))
     
     response = yield tornado.gen.Wait(wait_key)
     
     if not response.error and response.code == 200 and \
-            'class="profile-details"' in response.body:
+            acc_meta['username'] in response.body:
         result = True
     else:
         result = False
@@ -69,30 +66,35 @@ def check_list(in_list, conc=None, on_positive=None, on_finish=None):
         if not conc_in_list:
             break
         
-        conc_meta_list = tuple(
+        acc_meta_list = tuple(
                 {
                     'account_line': account_line,
                     'username': get_username(account_line),
+                    'url': 'https://mobile.twitter.com/{username}'.format(
+                            username=tornado.escape.url_escape(get_username(account_line)))
                 } for account_line in conc_in_list)
         
-        for conc_meta in conc_meta_list:
-            print('checking {!r}...'.format(conc_meta['username']))
+        for acc_meta in acc_meta_list:
+            print('checking {!r} ({!r})...'.format(
+                    acc_meta['username'], acc_meta['url']))
             
-            conc_meta['wait_key'] = object()
-            check_account(conc_meta['account_line'], conc_meta['username'],
-                    callback=(yield tornado.gen.Callback(conc_meta['wait_key'])))
+            acc_meta['wait_key'] = object()
+            check_account(acc_meta,
+                    callback=(yield tornado.gen.Callback(acc_meta['wait_key'])))
         
-        for conc_meta in conc_meta_list:
-            conc_meta['result'] = yield tornado.gen.Wait(conc_meta['wait_key'])
+        for acc_meta in acc_meta_list:
+            acc_meta['result'] = yield tornado.gen.Wait(acc_meta['wait_key'])
             
-            if conc_meta['result']:
-                print('{!r} is **positive**!'.format(conc_meta['username']))
+            if acc_meta['result']:
+                print('{!r} ({!r}) is **positive**!'.format(
+                        acc_meta['username'], acc_meta['url']))
                 
                 if on_positive is not None:
                     on_positive(
-                            conc_meta['account_line'], conc_meta['username'])
+                            acc_meta['account_line'], acc_meta['username'])
             else:
-                print('{!r} is negative!'.format(conc_meta['username']))
+                print('{!r} ({!r}) is negative!'.format(
+                        acc_meta['username'], acc_meta['url']))
     
     if on_finish is not None:
         on_finish()
