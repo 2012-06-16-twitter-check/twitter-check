@@ -22,7 +22,7 @@ import itertools
 import tornado.stack_context, tornado.gen, tornado.httpclient, \
         tornado.escape
 
-CONCURRENCE = 20
+CONCURRENCE = 10
 
 def get_username(account_line):
     account = account_line.split(':')
@@ -57,13 +57,16 @@ def check_account(account_line, username, callback=None):
         callback(result)
 
 @tornado.gen.engine
-def check_list(in_list, on_positive=None, on_finish=None):
+def check_list(in_list, conc=None, on_positive=None, on_finish=None):
     on_finish = tornado.stack_context.wrap(on_finish)
     on_positive = tornado.stack_context.wrap(on_positive)
     
+    if conc is None:
+        conc = CONCURRENCE
+    
     in_list_iter = iter(in_list)
     while True:
-        conc_in_list = list(itertools.islice(in_list_iter, CONCURRENCE))
+        conc_in_list = list(itertools.islice(in_list_iter, conc))
         if not conc_in_list:
             break
         
@@ -96,8 +99,8 @@ def check_list(in_list, on_positive=None, on_finish=None):
         on_finish()
 
 @tornado.gen.engine
-def check_list_files(in_list_files, out_list=None,
-        callback=None, on_positive=None):
+def check_list_files(in_list_files, conc=None,
+        out_list=None, callback=None, on_positive=None):
     callback = tornado.stack_context.wrap(callback)
     on_positive = tornado.stack_context.wrap(on_positive)
     
@@ -128,6 +131,7 @@ def check_list_files(in_list_files, out_list=None,
     
     wait_key = object()
     check_list(in_list,
+            conc=conc,
             on_finish=(yield tornado.gen.Callback(wait_key)),
             on_positive=on_check_list_files_positive)
     yield tornado.gen.Wait(wait_key)
