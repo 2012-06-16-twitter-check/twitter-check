@@ -33,13 +33,20 @@ def main():
     parser.add_argument('--conc', metavar='CONCURRENCE', type=int,
             help='concurrence')
     parser.add_argument('--delay', metavar='DELAY', type=int,
-            help='concurrence')
+            help='delay after each check')
+    parser.add_argument('--proxy', metavar='HTTP-PROXY',
+            help='HTTP proxy hostname (or hostname and port)')
     parser.add_argument('--out', metavar='OUT-FILE',
             help='output txt-file of Twitter account list with positive result check')
     
     args = parser.parse_args()
     
-    check_list_files(args.list, conc=args.conc, delay=args.delay,
+    if args.proxy is not None:
+        proxies = {'http': '{}'.format(args.proxy)}
+    else:
+        proxies = None
+    
+    check_list_files(args.list, conc=args.conc, delay=args.delay, proxies=proxies,
             out_list=args.out, callback=final)
     
     tornado.ioloop.IOLoop.instance().start()
