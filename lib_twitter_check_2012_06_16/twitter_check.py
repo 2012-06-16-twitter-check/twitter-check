@@ -40,8 +40,7 @@ def check_account(account_line, username, callback=None):
     
     wait_key = object()
     http_client = tornado.httpclient.AsyncHTTPClient()
-    http_client.fetch(
-            url,
+    http_client.fetch(url,
             follow_redirects=False,
             callback=(yield tornado.gen.Callback(wait_key)))
     
