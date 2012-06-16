@@ -32,11 +32,14 @@ def main():
             help='txt-file of Twitter account list in format ``username:password``')
     parser.add_argument('--conc', metavar='CONCURRENCE', type=int,
             help='concurrence')
+    parser.add_argument('--delay', metavar='DELAY', type=int,
+            help='concurrence')
     parser.add_argument('--out', metavar='OUT-FILE',
             help='output txt-file of Twitter account list with positive result check')
     
     args = parser.parse_args()
     
-    check_list_files(args.list, conc=args.conc, out_list=args.out, callback=final)
+    check_list_files(args.list, conc=args.conc, delay=args.delay,
+            out_list=args.out, callback=final)
     
     tornado.ioloop.IOLoop.instance().start()

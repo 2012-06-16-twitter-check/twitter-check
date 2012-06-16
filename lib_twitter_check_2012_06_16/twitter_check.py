@@ -18,11 +18,12 @@
 assert unicode is not str
 assert str is bytes
 
-import itertools
-import tornado.stack_context, tornado.gen, tornado.httpclient, \
-        tornado.escape
+import itertools, functools, datetime
+import tornado.ioloop, tornado.stack_context, tornado.gen, \
+        tornado.httpclient, tornado.escape
 
-CONCURRENCE = 10
+DEFAULT_CONCURRENCE = 10
+DEFAULT_DELAY = 20.0
 
 def get_username(account_line):
     account = account_line.split(':')
@@ -32,8 +33,11 @@ def get_username(account_line):
     return account[0]
 
 @tornado.gen.engine
-def check_account(acc_meta, callback=None):
+def check_account(acc_meta, delay=None, callback=None):
     callback = tornado.stack_context.wrap(callback)
+    
+    if delay is None:
+        delay = DEFAULT_DELAY
     
     wait_key = object()
     http_client = tornado.httpclient.AsyncHTTPClient()
@@ -50,15 +54,18 @@ def check_account(acc_meta, callback=None):
         result = False
     
     if callback is not None:
-        callback(result)
+        deadline = datetime.timedelta(seconds=delay)
+        tornado.ioloop.IOLoop.instance().add_timeout(
+                deadline,
+                functools.partial(callback, result))
 
 @tornado.gen.engine
-def check_list(in_list, conc=None, on_positive=None, on_finish=None):
+def check_list(in_list, conc=None, delay=None, on_positive=None, on_finish=None):
     on_finish = tornado.stack_context.wrap(on_finish)
     on_positive = tornado.stack_context.wrap(on_positive)
     
     if conc is None:
-        conc = CONCURRENCE
+        conc = DEFAULT_CONCURRENCE
     
     in_list_iter = iter(in_list)
     while True:
@@ -79,7 +86,7 @@ def check_list(in_list, conc=None, on_positive=None, on_finish=None):
                     acc_meta['username'], acc_meta['url']))
             
             acc_meta['wait_key'] = object()
-            check_account(acc_meta,
+            check_account(acc_meta, delay=delay,
                     callback=(yield tornado.gen.Callback(acc_meta['wait_key'])))
         
         for acc_meta in acc_meta_list:
@@ -100,7 +107,7 @@ def check_list(in_list, conc=None, on_positive=None, on_finish=None):
         on_finish()
 
 @tornado.gen.engine
-def check_list_files(in_list_files, conc=None,
+def check_list_files(in_list_files, conc=None, delay=None,
         out_list=None, callback=None, on_positive=None):
     callback = tornado.stack_context.wrap(callback)
     on_positive = tornado.stack_context.wrap(on_positive)
@@ -131,8 +138,7 @@ def check_list_files(in_list_files, conc=None,
                 on_positive(account_line, username)
     
     wait_key = object()
-    check_list(in_list,
-            conc=conc,
+    check_list(in_list, conc=conc, delay=delay,
             on_finish=(yield tornado.gen.Callback(wait_key)),
             on_positive=on_check_list_files_positive)
     yield tornado.gen.Wait(wait_key)
