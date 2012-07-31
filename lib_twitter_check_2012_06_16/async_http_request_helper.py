@@ -24,7 +24,7 @@ import urllib2
 from .daemon_async import daemon_async
 
 REQUEST_TIMEOUT = 20.0
-RESPONSE_BODY_LENGTH_LIMIT = 100000000
+RESPONSE_BODY_LENGTH_LIMIT = 10000000
 
 class Response:
     pass
