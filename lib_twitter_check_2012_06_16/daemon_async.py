@@ -26,8 +26,7 @@ import tornado.ioloop, tornado.stack_context
 def daemon_async(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        callback = kwargs.pop('callback')
-        
+        callback = kwargs.pop('callback', None)
         callback = tornado.stack_context.wrap(callback)
         
         @tornado.stack_context.wrap
