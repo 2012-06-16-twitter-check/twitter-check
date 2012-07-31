@@ -81,7 +81,7 @@ def check_list(in_list, conc=None, delay=None, proxies=None,
     
     in_list_iter = iter(in_list)
     while True:
-        conc_in_list = list(itertools.islice(in_list_iter, conc))
+        conc_in_list = tuple(itertools.islice(in_list_iter, conc))
         if not conc_in_list:
             break
         
