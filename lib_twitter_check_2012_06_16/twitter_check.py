@@ -20,7 +20,7 @@ from __future__ import absolute_import
 assert unicode is not str
 assert str is bytes
 
-import itertools, functools, datetime
+import functools, datetime
 import tornado.ioloop, tornado.stack_context, tornado.gen, \
         tornado.httpclient, tornado.escape
 from .async_http_request_helper import async_fetch
@@ -71,58 +71,85 @@ def check_account(acc_meta, delay=None, proxies=None, callback=None):
                 functools.partial(callback, result))
 
 @tornado.gen.engine
-def check_list(in_list, conc=None, delay=None, proxies=None,
-        on_positive=None, on_finish=None):
-    on_finish = tornado.stack_context.wrap(on_finish)
+def check_list_thread(in_list_iter, delay=None, proxies=None,
+        on_positive=None, on_negative=None,
+        on_check_open=None, on_check_finish=None, on_finish=None):
+    on_check_open = tornado.stack_context.wrap(on_check_open)
+    on_check_finish = tornado.stack_context.wrap(on_check_finish)
     on_positive = tornado.stack_context.wrap(on_positive)
+    on_negative = tornado.stack_context.wrap(on_negative)
+    on_finish = tornado.stack_context.wrap(on_finish)
+    
+    for account_line in in_list_iter:
+        username = get_username(account_line)
+        url = 'http://mobile.twitter.com/{username}'.format(
+                    username=tornado.escape.url_escape(username))
+        acc_meta = {
+            'account_line': account_line,
+            'username': username,
+            'url': url,
+        }
+        
+        print('checking {!r} ({!r})...'.format(username, url))
+        
+        if on_check_open is not None:
+            on_check_open(acc_meta)
+        
+        wait_key = object()
+        check_account(acc_meta, delay=delay, proxies=proxies,
+                callback=(yield tornado.gen.Callback(wait_key)))
+        
+        result = yield tornado.gen.Wait(wait_key)
+        
+        if result:
+            print('{!r} ({!r}) is **positive**!'.format(username, url))
+            
+            if on_positive is not None:
+                on_positive(acc_meta)
+        else:
+            print('{!r} ({!r}) is negative!'.format(username, url))
+            
+            if on_negative is not None:
+                on_negative(acc_meta)
+        
+        if on_check_finish is not None:
+            on_check_finish(acc_meta)
+    
+    if on_finish is not None:
+        on_finish()
+
+@tornado.gen.engine
+def bulk_check_list(in_list, conc=None, delay=None, proxies=None,
+        on_positive=None, on_negative=None,
+        on_check_open=None, on_check_finish=None, on_finish=None):
+    on_check_open = tornado.stack_context.wrap(on_check_open)
+    on_check_finish = tornado.stack_context.wrap(on_check_finish)
+    on_positive = tornado.stack_context.wrap(on_positive)
+    on_negative = tornado.stack_context.wrap(on_negative)
+    on_finish = tornado.stack_context.wrap(on_finish)
     
     if conc is None:
         conc = DEFAULT_CONCURRENCE
     
     in_list_iter = iter(in_list)
-    while True:
-        conc_in_list = tuple(itertools.islice(in_list_iter, conc))
-        if not conc_in_list:
-            break
-        
-        acc_meta_list = tuple(
-                {
-                    'account_line': account_line,
-                    'username': get_username(account_line),
-                    'url': 'http://mobile.twitter.com/{username}'.format(
-                            username=tornado.escape.url_escape(get_username(account_line)))
-                } for account_line in conc_in_list)
-        
-        for acc_meta in acc_meta_list:
-            print('checking {!r} ({!r})...'.format(
-                    acc_meta['username'], acc_meta['url']))
-            
-            acc_meta['wait_key'] = object()
-            check_account(acc_meta, delay=delay, proxies=proxies,
-                    callback=(yield tornado.gen.Callback(acc_meta['wait_key'])))
-        
-        for acc_meta in acc_meta_list:
-            acc_meta['result'] = yield tornado.gen.Wait(acc_meta['wait_key'])
-            
-            if acc_meta['result']:
-                print('{!r} ({!r}) is **positive**!'.format(
-                        acc_meta['username'], acc_meta['url']))
-                
-                if on_positive is not None:
-                    on_positive(
-                            acc_meta['account_line'], acc_meta['username'])
-            else:
-                print('{!r} ({!r}) is negative!'.format(
-                        acc_meta['username'], acc_meta['url']))
+    wait_key_list = tuple(object() for x in xrange(conc))
+    
+    for wait_key in wait_key_list:
+        check_list_thread(in_list_iter, delay=delay, proxies=proxies,
+                on_positive=on_positive, on_negative=on_negative,
+                on_check_open=on_check_open, on_check_finish=on_check_finish,
+                on_finish=(yield tornado.gen.Callback(wait_key)))
+    
+    for wait_key in wait_key_list:
+        yield tornado.gen.Wait(wait_key)
     
     if on_finish is not None:
         on_finish()
 
 @tornado.gen.engine
 def check_list_files(in_list_files, conc=None, delay=None, proxies=None,
-        out_list=None, callback=None, on_positive=None):
+        out_list=None, callback=None):
     callback = tornado.stack_context.wrap(callback)
-    on_positive = tornado.stack_context.wrap(on_positive)
     
     in_list = []
     
@@ -137,20 +164,18 @@ def check_list_files(in_list_files, conc=None, delay=None, proxies=None,
     
     if out_list is not None:
         out_fd = open(out_list, 'w')
-        def on_check_list_files_positive(account_line, username):
+        def on_check_list_files_positive(acc_meta):
+            account_line = acc_meta['account_line']
+            username =  acc_meta['username']
+            
             out_fd.write('{}\n'.format(account_line))
             out_fd.flush()
-            
-            if on_positive is not None:
-                on_positive(account_line, username)
     else:
         out_fd = None
-        def on_check_list_files_positive(account_line, username):
-            if on_positive is not None:
-                on_positive(account_line, username)
+        on_check_list_files_positive = None
     
     wait_key = object()
-    check_list(in_list, conc=conc, delay=delay, proxies=proxies,
+    bulk_check_list(in_list, conc=conc, delay=delay, proxies=proxies,
             on_finish=(yield tornado.gen.Callback(wait_key)),
             on_positive=on_check_list_files_positive)
     yield tornado.gen.Wait(wait_key)
